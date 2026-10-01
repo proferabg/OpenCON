@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#10151d">
   <title>OpenCON</title>
   <script type="module">
-    const version = "2026.10.01.5";
+    const version = "2026.10.01.9";
     globalThis.OPENCON_BUILD = Object.freeze({ version });
 
     const stylesheet = document.createElement("link");
@@ -14,14 +14,33 @@
     stylesheet.href = `./styles.css?v=${encodeURIComponent(version)}`;
     document.head.append(stylesheet);
 
+    const favicon = document.createElement("link");
+    favicon.rel = "icon";
+    favicon.type = "image/png";
+    favicon.sizes = "128x128";
+    favicon.href = `./favicon.png?v=${encodeURIComponent(version)}`;
+    document.head.append(favicon);
+
+    document.getElementById("brandIcon").src = favicon.href;
+
+    const touchIcon = document.createElement("link");
+    touchIcon.rel = "apple-touch-icon";
+    touchIcon.sizes = "180x180";
+    touchIcon.href = `./apple-touch-icon.png?v=${encodeURIComponent(version)}`;
+    document.head.append(touchIcon);
+
     document.getElementById("buildInfo").textContent = `Build v${version}`;
     await import(`./src/app.js?v=${encodeURIComponent(version)}`);
+    const jsStatus = document.getElementById("jsStatus");
+    jsStatus.classList.add("loaded");
+    jsStatus.setAttribute("aria-label", "JavaScript loaded");
+    jsStatus.title = "JavaScript loaded";
   </script>
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="./" aria-label="OpenCON home">
-      <span class="brand-mark">OC</span>
+      <img id="brandIcon" class="brand-mark" alt="" width="38" height="38">
       <span><strong>OpenCON</strong><small>Xbox 360 package explorer</small></span>
     </a>
     <div class="toolbar">
@@ -74,8 +93,10 @@
   </main>
 
   <footer>
-    <span>OpenCON runs entirely in your browser. <a href="https://github.com/proferabg/OpenCON" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="LICENSE" target="_blank" rel="license">MIT License</a> <span id="buildInfo" class="build-info">Build</span></span>
-    <span id="status">Ready</span>
+    <span class="footer-note">OpenCON runs entirely in your browser.</span>
+    <span class="footer-links"><a href="https://github.com/proferabg/OpenCON" target="_blank" rel="noopener noreferrer">GitHub</a> · <a href="LICENSE" target="_blank" rel="license">MIT License</a></span>
+    <span class="footer-build"><span id="jsStatus" class="js-status" role="status" aria-label="JavaScript not loaded" title="JavaScript not loaded"></span><span id="buildInfo" class="build-info">Build</span></span>
+    <span id="status" class="visually-hidden" aria-live="polite"></span>
   </footer>
 
   <dialog id="errorDialog">

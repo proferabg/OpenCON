@@ -22,7 +22,7 @@ button.primary { background: linear-gradient(180deg, #3eb760, #278d46); border-c
 button:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .topbar { height: 74px; display: flex; align-items: center; justify-content: space-between; padding: 0 clamp(18px, 4vw, 56px); border-bottom: 1px solid var(--line); background: rgba(11,15,20,.88); backdrop-filter: blur(14px); }
 .brand { display: flex; gap: 12px; color: inherit; text-decoration: none; align-items: center; }
-.brand-mark { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; font-weight: 800; background: linear-gradient(145deg, var(--green), var(--green-2)); color: #07110a; box-shadow: 0 0 28px #43b96233; }
+.brand-mark { width: 38px; height: 38px; display: block; object-fit: contain; filter: drop-shadow(0 0 10px #43b9624d); }
 .brand strong, .brand small { display: block; }
 .brand strong { letter-spacing: .02em; }
 .brand small { color: var(--muted); font-size: .72rem; margin-top: 1px; }
@@ -63,10 +63,16 @@ tbody tr.folder td:first-child { font-weight: 650; color: #dce9e0; }
 td { font-size: .86rem; }
 td.path { color: var(--muted); }
 .size { width: 110px; text-align: right; }
-footer { min-height: 42px; display: flex; justify-content: space-between; gap: 15px; align-items: center; padding: 0 clamp(18px, 4vw, 56px); border-top: 1px solid var(--line); color: var(--muted); font-size: .76rem; }
+footer { min-height: 42px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 15px; align-items: center; padding: 0 clamp(18px, 4vw, 56px); border-top: 1px solid var(--line); color: var(--muted); font-size: .76rem; }
 footer a { color: #b7d9be; text-underline-offset: 2px; }
 footer a:hover { color: var(--green); }
-.build-info { color: #c2ccda; margin-left: .4rem; white-space: nowrap; }
+.footer-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.footer-links { justify-self: center; white-space: nowrap; }
+.footer-build { justify-self: end; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.build-info { color: #c2ccda; }
+.js-status { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: #e5484d; box-shadow: 0 0 7px #e5484d99; }
+.js-status.loaded { background: #43b962; box-shadow: 0 0 7px #43b96299; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 dialog { width: min(620px, calc(100vw - 30px)); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 25px 100px #000b; }
 dialog::backdrop { background: #0009; backdrop-filter: blur(3px); }
 dialog pre { white-space: pre-wrap; color: #f0b0b0; max-height: 45vh; overflow: auto; }

@@ -1,4 +1,5 @@
-import { textAscii, u32le } from "./binary.js?v=2026.10.01.2";
+const moduleVersion = encodeURIComponent(globalThis.OPENCON_BUILD?.version || "development");
+const { textAscii, u32le } = await import(`./binary.js?v=${moduleVersion}`);
 
 const SECTOR = 0x800;
 const MAGIC = "MICROSOFT*XBOX*MEDIA";

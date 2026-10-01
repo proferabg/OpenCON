@@ -1,4 +1,5 @@
-import { SliceSource } from "./source.js?v=2026.10.01.2";
+const moduleVersion = encodeURIComponent(globalThis.OPENCON_BUILD?.version || "development");
+const { SliceSource } = await import(`./source.js?v=${moduleVersion}`);
 
 const FRAGMENT_SIZE = 0x0A290000;
 const FRAGMENT_PREFIX = 0x2000;

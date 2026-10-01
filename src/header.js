@@ -1,4 +1,5 @@
-import { hex, textAscii, textUtf16be, u32be, u64be } from "./binary.js?v=2026.10.01.2";
+const moduleVersion = encodeURIComponent(globalThis.OPENCON_BUILD?.version || "development");
+const { hex, textAscii, textUtf16be, u32be, u64be } = await import(`./binary.js?v=${moduleVersion}`);
 
 export const INSTALLED_TYPES = new Set([0x4000, 0x5000, 0x6000, 0x7000]);
 

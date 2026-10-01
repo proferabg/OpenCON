@@ -1,4 +1,5 @@
-import { equalBytes, textAscii, u16be, u16le, u24le, u32be } from "./binary.js?v=2026.10.01.2";
+const moduleVersion = encodeURIComponent(globalThis.OPENCON_BUILD?.version || "development");
+const { equalBytes, textAscii, u16be, u16le, u24le, u32be } = await import(`./binary.js?v=${moduleVersion}`);
 
 const END_BLOCK = 0xFFFFFF;
 const LEVEL0 = 0xAA;

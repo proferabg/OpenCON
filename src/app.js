@@ -1,9 +1,18 @@
-import { formatBytes, hex, safeName } from "./binary.js?v=2026.10.01.2";
-import { readPackageHeader, versionText } from "./header.js?v=2026.10.01.2";
-import { BlobSource, collectStream } from "./source.js?v=2026.10.01.2";
-import { StfsPackage } from "./stfs.js?v=2026.10.01.2";
-import { fragmentsFromMonolith, SvodIsoSource } from "./svod.js?v=2026.10.01.2";
-import { XdvdfsVolume } from "./xdvdfs.js?v=2026.10.01.2";
+const moduleVersion = encodeURIComponent(globalThis.OPENCON_BUILD?.version || "development");
+const [binary, headerModule, sourceModule, stfsModule, svodModule, xdvdfsModule] = await Promise.all([
+  import(`./binary.js?v=${moduleVersion}`),
+  import(`./header.js?v=${moduleVersion}`),
+  import(`./source.js?v=${moduleVersion}`),
+  import(`./stfs.js?v=${moduleVersion}`),
+  import(`./svod.js?v=${moduleVersion}`),
+  import(`./xdvdfs.js?v=${moduleVersion}`)
+]);
+const { formatBytes, hex, safeName } = binary;
+const { readPackageHeader, versionText } = headerModule;
+const { BlobSource, collectStream } = sourceModule;
+const { StfsPackage } = stfsModule;
+const { fragmentsFromMonolith, SvodIsoSource } = svodModule;
+const { XdvdfsVolume } = xdvdfsModule;
 
 const $ = (id) => document.getElementById(id);
 const state = { package: null, header: null, rows: [], selected: null, artworkUrl: null, collapsed: new Set() };

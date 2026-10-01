@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10151d">
+  <title>OpenCON</title>
+  <link rel="stylesheet" href="styles.css?v=2026.10.01.2">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="OpenCON home">
+      <span class="brand-mark">OC</span>
+      <span><strong>OpenCON</strong><small>Xbox 360 package explorer</small></span>
+    </a>
+    <div class="toolbar">
+      <button id="openFiles" class="primary">Open package</button>
+      <button id="openFolder">Open GoD folder</button>
+      <input id="fileInput" type="file" multiple hidden>
+      <input id="folderInput" type="file" webkitdirectory multiple hidden>
+    </div>
+  </header>
+
+  <main>
+    <section id="dropZone" class="welcome">
+      <div class="drop-icon">↓</div>
+      <h1>Open Xbox 360 packages locally</h1>
+      <p>Drop a CON, LIVE, PIRS, monolithic Xbox App package, or a split GoD folder here.</p>
+      <p class="privacy">Nothing is uploaded. Large files are read in small slices.</p>
+      <div class="format-chips"><span>CON</span><span>LIVE</span><span>PIRS</span><span>GoD / SVOD</span><span>Xbox App / XUP</span></div>
+    </section>
+
+    <section id="workspace" class="workspace hidden">
+      <aside class="sidebar">
+        <div id="artwork" class="artwork"><span>OC</span></div>
+        <dl id="metadata" class="metadata"></dl>
+      </aside>
+
+      <section class="browser">
+        <div class="browser-head">
+          <div>
+            <h2 id="packageTitle">Package</h2>
+            <p id="packageSubtitle"></p>
+          </div>
+          <div class="actions">
+            <button id="verifyButton" disabled>Verify selected</button>
+            <button id="extractButton" class="primary" disabled>Extract selected</button>
+            <button id="extractAllButton">Extract all</button>
+          </div>
+        </div>
+        <div class="filter-row">
+          <input id="filter" type="search" placeholder="Filter files by path…" autocomplete="off">
+          <span id="fileSummary"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Path</th><th class="size">Size</th></tr></thead>
+            <tbody id="fileRows"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <footer>
+    <span>OpenCON runs entirely in your browser. <a href="LICENSE" target="_blank" rel="license">MIT License</a> <span class="build-info">Build 2026-10-01 · v2026.10.01.2</span></span>
+    <span id="status">Ready</span>
+  </footer>
+
+  <dialog id="errorDialog">
+    <h3>OpenCON could not open this package</h3>
+    <pre id="errorText"></pre>
+    <form method="dialog"><button class="primary">Close</button></form>
+  </dialog>
+
+  <script type="module" src="src/app.js?v=2026.10.01.2"></script>
+</body>
+</html>

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#10151d">
   <title>OpenCON</title>
   <script type="module">
-    const version = "2026.10.01.9";
+    const version = "2026.10.01.16";
     globalThis.OPENCON_BUILD = Object.freeze({ version });
 
     const stylesheet = document.createElement("link");
@@ -55,9 +55,9 @@
     <section id="dropZone" class="welcome">
       <div class="drop-icon">↓</div>
       <h1>Open Xbox 360 packages locally</h1>
-      <p>Drop a CON, LIVE, PIRS, monolithic Xbox App package, or a split GoD folder here.</p>
+      <p>Drop a CON, LIVE, PIRS, XZP, monolithic Xbox App package, or a split GoD folder here.</p>
       <p class="privacy">Nothing is uploaded. Large files are read in small slices.</p>
-      <div class="format-chips"><span>CON</span><span>LIVE</span><span>PIRS</span><span>GoD / SVOD</span><span>Xbox App / XUP</span></div>
+      <div class="format-chips"><span>CON</span><span>LIVE</span><span>PIRS</span><span>XZP v1 / v3</span><span>GoD / SVOD</span><span>Xbox App / XUP</span></div>
     </section>
 
     <section id="workspace" class="workspace hidden">
@@ -98,6 +98,14 @@
     <span class="footer-build"><span id="jsStatus" class="js-status" role="status" aria-label="JavaScript not loaded" title="JavaScript not loaded"></span><span id="buildInfo" class="build-info">Build</span></span>
     <span id="status" class="visually-hidden" aria-live="polite"></span>
   </footer>
+
+  <dialog id="previewDialog" class="preview-dialog">
+    <div class="dialog-head">
+      <h3 id="previewTitle">File preview</h3>
+      <form method="dialog"><button aria-label="Close preview">Close</button></form>
+    </div>
+    <div id="previewBody" class="preview-body"></div>
+  </dialog>
 
   <dialog id="errorDialog">
     <h3>OpenCON could not open this package</h3>

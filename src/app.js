@@ -9,7 +9,7 @@ const [binary, headerModule, sourceModule, stfsModule, svodModule, xdvdfsModule,
   import(`./xex.js?v=${moduleVersion}`),
   import(`./xzp.js?v=${moduleVersion}`)
 ]);
-const { formatBytes, hex, safeName } = binary;
+const { formatBytes, hex, safeName, uniqueSafeName } = binary;
 const { readPackageHeader, versionText } = headerModule;
 const { BlobSource, collectStream } = sourceModule;
 const { StfsPackage } = stfsModule;
@@ -19,7 +19,11 @@ const { MAX_XEX_HEADER_SIZE, formatXexTimestamp, formatXexVersion, parseXex } = 
 const { XzpArchive } = xzpModule;
 
 const MAX_IMAGE_PREVIEW_SIZE = 64 * 1024 * 1024;
+const MAX_GALLERY_IMAGE_SIZE = 64 * 1024 * 1024;
+const MAX_GALLERY_TOTAL_SIZE = 256 * 1024 * 1024;
 const MAX_TEXT_PREVIEW_SIZE = 8 * 1024 * 1024;
+const GAMER_PICTURE_CONTENT_TYPE = 0x00020000;
+const THEME_CONTENT_TYPE = 0x00030000;
 const IMAGE_TYPES = new Map([
   ["png", "image/png"], ["apng", "image/apng"], ["jpg", "image/jpeg"], ["jpeg", "image/jpeg"], ["jfif", "image/jpeg"],
   ["gif", "image/gif"], ["webp", "image/webp"], ["bmp", "image/bmp"],
@@ -30,6 +34,8 @@ const $ = (id) => document.getElementById(id);
 const state = { package: null, header: null, rows: [], selected: null, collapsed: new Set() };
 let openGeneration = 0;
 let selectionGeneration = 0;
+let galleryGeneration = 0;
+let galleryObjectUrls = [];
 let dragDepth = 0;
 
 $("openFiles").addEventListener("click", () => $("fileInput").click());
@@ -40,12 +46,20 @@ $("filter").addEventListener("input", renderRows);
 $("extractButton").addEventListener("click", extractSelected);
 $("extractAllButton").addEventListener("click", extractAll);
 $("verifyButton").addEventListener("click", verifySelected);
+$("containerGalleryButton").addEventListener("click", showContainerGallery);
 $("previewDialog").addEventListener("click", (event) => {
   const dialog = event.currentTarget;
   const bounds = dialog.getBoundingClientRect();
   const inside = event.clientX >= bounds.left && event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
   if (!inside) dialog.close();
 });
+$("galleryDialog").addEventListener("click", (event) => {
+  const dialog = event.currentTarget;
+  const bounds = dialog.getBoundingClientRect();
+  const inside = event.clientX >= bounds.left && event.clientX <= bounds.right && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
+  if (!inside) dialog.close();
+});
+$("galleryDialog").addEventListener("close", clearContainerGallery);
 
 document.addEventListener("dragenter", (event) => {
   if (!isFileDrag(event)) return;
@@ -85,6 +99,8 @@ function clearDragState() {
 async function openFiles(files) {
   if (!files.length) return;
   const generation = ++openGeneration;
+  closeContainerGallery();
+  configureContainerGallery(null);
   setStatus("Inspecting package…");
   try {
     const headerFile = await findHeaderFile(files);
@@ -103,6 +119,7 @@ async function openFiles(files) {
       state.collapsed.clear();
       state.rows = flatten(archive.root);
       renderXzpPackage(archive, xzpFile);
+      configureContainerGallery(null);
       renderRows();
       $("dropZone").classList.add("hidden");
       $("workspace").classList.remove("hidden");
@@ -135,6 +152,7 @@ async function openFiles(files) {
     state.collapsed.clear();
     state.rows = flatten(packageReader.root);
     renderPackage(header, headerFile, family);
+    configureContainerGallery(header);
     renderRows();
     $("dropZone").classList.add("hidden");
     $("workspace").classList.remove("hidden");
@@ -191,7 +209,7 @@ function renderPackage(header, file, family) {
   renderMetadata(fields);
   const image = header.contentImage || header.packageImage;
   if (image) {
-    const img = document.createElement("img"); img.src = bytesToDataUrl(image, detectImageMime(image)); img.alt = "Package artwork";
+    const img = document.createElement("img"); img.src = bytesToDataUrl(image, detectImageMime(image) || "image/png"); img.alt = "Package artwork";
     $("artwork").replaceChildren(img);
   } else {
     const mark = document.createElement("span"); mark.textContent = header.signatureType;
@@ -209,6 +227,120 @@ function renderXzpPackage(archive, file) {
   ]);
   const mark = document.createElement("span"); mark.textContent = "XZP";
   $("artwork").replaceChildren(mark);
+}
+
+function configureContainerGallery(header) {
+  const button = $("containerGalleryButton");
+  if (header?.contentType === GAMER_PICTURE_CONTENT_TYPE) {
+    button.textContent = "Show Gamer Pictures";
+    button.hidden = false;
+    button.disabled = false;
+  } else if (header?.contentType === THEME_CONTENT_TYPE) {
+    button.textContent = "Show Theme";
+    button.hidden = false;
+    button.disabled = false;
+  } else {
+    button.hidden = true;
+    button.disabled = true;
+  }
+}
+
+async function showContainerGallery() {
+  const header = state.header;
+  const mode = header?.contentType === GAMER_PICTURE_CONTENT_TYPE ? "Gamer Pictures"
+    : header?.contentType === THEME_CONTENT_TYPE ? "Theme" : null;
+  if (!mode) return;
+
+  const generation = ++galleryGeneration;
+  const button = $("containerGalleryButton");
+  button.disabled = true;
+  clearGalleryObjectUrls();
+  $("galleryTitle").textContent = mode;
+  const loading = document.createElement("p");
+  loading.className = "gallery-message";
+  loading.textContent = `Finding ${mode.toLowerCase()} images…`;
+  $("galleryBody").replaceChildren(loading);
+  if (!$("galleryDialog").open) $("galleryDialog").showModal();
+
+  try {
+    const cards = [];
+    let totalSize = 0;
+    let skippedForSize = 0;
+    const nodes = state.rows.map(row => row.node).filter(node => !node.directory && node.size > 0);
+    for (const node of nodes) {
+      if (generation !== galleryGeneration) return;
+      if (node.size > MAX_GALLERY_IMAGE_SIZE) { skippedForSize++; continue; }
+      const prefix = await readNodePrefix(node, 16);
+      const mimeType = detectImageMime(prefix);
+      if (!mimeType) continue;
+      if (totalSize + node.size > MAX_GALLERY_TOTAL_SIZE) { skippedForSize++; continue; }
+      totalSize += node.size;
+      const raw = await collectStream(node.stream(1024 * 1024), MAX_GALLERY_IMAGE_SIZE);
+      if (generation !== galleryGeneration) return;
+      cards.push(createGalleryCard(node, raw, mimeType));
+      loading.textContent = `Loading ${mode.toLowerCase()} images · ${cards.length} found`;
+    }
+
+    if (generation !== galleryGeneration) return;
+    if (!cards.length) {
+      loading.textContent = `No supported images were found in this ${mode.toLowerCase()} container.`;
+      return;
+    }
+    const grid = document.createElement("div");
+    grid.className = "image-gallery";
+    grid.replaceChildren(...cards);
+    const summary = document.createElement("p");
+    summary.className = "gallery-summary";
+    summary.textContent = `${cards.length} image${cards.length === 1 ? "" : "s"}${skippedForSize ? ` · ${skippedForSize} oversized image${skippedForSize === 1 ? "" : "s"} skipped` : ""}`;
+    $("galleryBody").replaceChildren(summary, grid);
+    setStatus(`Displayed ${cards.length} ${mode.toLowerCase()} image${cards.length === 1 ? "" : "s"}`);
+  } catch (error) {
+    if (generation !== galleryGeneration) return;
+    closeContainerGallery();
+    showError(error, `OpenCON could not display this ${mode.toLowerCase()}`);
+  } finally {
+    if (generation === galleryGeneration) button.disabled = false;
+  }
+}
+
+function createGalleryCard(node, raw, mimeType) {
+  const figure = document.createElement("figure");
+  figure.className = "gallery-card";
+  const image = document.createElement("img");
+  const objectUrl = URL.createObjectURL(new Blob([raw], { type: mimeType }));
+  galleryObjectUrls.push(objectUrl);
+  image.src = objectUrl;
+  image.alt = node.name;
+  image.loading = "lazy";
+  const caption = document.createElement("figcaption");
+  const name = document.createElement("strong");
+  name.textContent = node.name;
+  const details = document.createElement("span");
+  details.textContent = `${node.path} · ${formatBytes(node.size)}`;
+  image.addEventListener("load", () => {
+    details.textContent = `${node.path} · ${image.naturalWidth} × ${image.naturalHeight} · ${formatBytes(node.size)}`;
+  }, { once: true });
+  caption.append(name, details);
+  figure.append(image, caption);
+  return figure;
+}
+
+function closeContainerGallery() {
+  galleryGeneration++;
+  if ($("galleryDialog").open) $("galleryDialog").close();
+  else clearContainerGallery();
+}
+
+function clearContainerGallery() {
+  galleryGeneration++;
+  clearGalleryObjectUrls();
+  $("galleryBody").replaceChildren();
+  if (!$("containerGalleryButton").hidden) $("containerGalleryButton").disabled = false;
+}
+
+function clearGalleryObjectUrls() {
+  for (const url of galleryObjectUrls) URL.revokeObjectURL(url);
+  galleryObjectUrls = [];
 }
 
 function renderRows() {
@@ -401,7 +533,7 @@ function detectImageMime(bytes) {
   if (bytes.length >= 6 && String.fromCharCode(...bytes.subarray(0, 6)).startsWith("GIF8")) return "image/gif";
   if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4D) return "image/bmp";
   if (bytes.length >= 12 && String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF" && String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP") return "image/webp";
-  return "image/png";
+  return null;
 }
 
 async function readNodePrefix(node, maximum) {
@@ -457,27 +589,33 @@ async function extractAll() {
   try {
     const destination = await window.showDirectoryPicker({ mode: "readwrite" });
     const rootName = safeName(state.header?.displayTitle || state.header?.packageTitle || state.package?.name || "OpenCON extraction");
-    const rootHandle = await destination.getDirectoryHandle(rootName, { create: true });
+    const rootHandle = await createOutputHandle(destination, rootName, true, "package root");
     let completed = 0;
+    const renamedFiles = [];
     const total = state.rows.filter(row => !row.node.directory).length;
     await writeChildren(state.package.root.children, rootHandle, () => {
       completed++;
       setStatus(`Extracting all · ${completed}/${total} files`);
+    }, (packagePath, originalName, outputName) => {
+      renamedFiles.push({ packagePath, originalName, outputName });
     });
-    setStatus(`Extracted ${completed} files`);
+    setStatus(`Extracted ${completed} files${renamedFiles.length ? ` · adjusted ${renamedFiles.length} output name${renamedFiles.length === 1 ? "" : "s"}` : ""}`);
+    if (renamedFiles.length) showRenamedFilesNotice(renamedFiles);
   } catch (error) {
-    if (error.name !== "AbortError") showError(error);
+    if (error.name !== "AbortError") showError(error, "OpenCON could not extract this package");
     setStatus(error.name === "AbortError" ? "Extraction cancelled" : "Extraction failed");
   }
 }
 
-async function writeChildren(nodes, directoryHandle, onFile) {
+async function writeChildren(nodes, directoryHandle, onFile, onRename) {
+  const usedNames = new Set();
   for (const node of nodes) {
+    const outputName = uniqueSafeName(node.name, usedNames, node.directory ? "folder" : "file");
     if (node.directory) {
-      const childHandle = await directoryHandle.getDirectoryHandle(safeName(node.name), { create: true });
-      await writeChildren(node.children, childHandle, onFile);
+      const childHandle = await createOutputHandle(directoryHandle, outputName, true, node.path, onRename);
+      await writeChildren(node.children, childHandle, onFile, onRename);
     } else {
-      const fileHandle = await directoryHandle.getFileHandle(safeName(node.name), { create: true });
+      const fileHandle = await createOutputHandle(directoryHandle, outputName, false, node.path, onRename);
       const writable = await fileHandle.createWritable();
       try {
         for await (const chunk of node.stream()) await writable.write(chunk);
@@ -486,6 +624,56 @@ async function writeChildren(nodes, directoryHandle, onFile) {
       onFile();
     }
   }
+}
+
+async function createOutputHandle(parentHandle, requestedName, directory, packagePath, onRename = () => {}) {
+  const method = directory ? "getDirectoryHandle" : "getFileHandle";
+  const kind = directory ? "folder" : "file";
+  // Chromium blocks writing some sensitive extensions (for example .ini) and
+  // reports that policy failure as the otherwise vague "Name is not allowed."
+  // Retrying with a prefix still has the same blocked extension, so also offer
+  // a recognizable extension-neutral form and a deterministic final fallback.
+  // Appending an underscore preserves the complete original extension so the
+  // user can restore it after extraction (parameters.ini -> parameters.ini_).
+  const neutralName = `${requestedName}_`;
+  const genericName = `${kind}_${shortNameHash(packagePath)}`;
+  const candidates = [requestedName, safeName(`_${requestedName}`), safeName(neutralName), safeName(genericName)];
+  let lastError;
+
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      const handle = await parentHandle[method](candidate, { create: true });
+      if (candidate !== requestedName) onRename(packagePath, requestedName, candidate);
+      return handle;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableOutputNameError(error)) break;
+    }
+  }
+
+  const detail = lastError?.message || String(lastError);
+  throw new Error(`Could not create output ${kind} for ${packagePath} as ${JSON.stringify(requestedName)}: ${detail}`, { cause: lastError });
+}
+
+function shortNameHash(value) {
+  let hash = 0x811C9DC5;
+  for (const character of String(value)) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).toUpperCase().padStart(8, "0");
+}
+
+function isRetryableOutputNameError(error) {
+  return error instanceof TypeError || error?.name === "TypeMismatchError" || error?.name === "InvalidModificationError";
+}
+
+function showRenamedFilesNotice(files) {
+  const changes = files.map(({ packagePath, outputName }) => `• ${packagePath} → ${outputName}`).join("\n");
+  showMessage(
+    "Extraction completed with renamed files",
+    `This package contains a file type that Chrome or Edge does not allow a website to create directly. OpenCON extracted it with an underscore after its extension instead.\n\n${changes}\n\nRename each extracted file by removing the final underscore (for example, parameters.ini_ → parameters.ini).`
+  );
 }
 
 async function verifySelected() {
@@ -500,7 +688,11 @@ async function verifySelected() {
 }
 
 function setStatus(message) { $("status").textContent = message; }
-function showError(error) {
-  $("errorText").textContent = error?.stack || String(error);
+function showError(error, title = "OpenCON could not open this package") {
+  showMessage(title, error?.stack || String(error));
+}
+function showMessage(title, message) {
+  $("errorTitle").textContent = title;
+  $("errorText").textContent = message;
   $("errorDialog").showModal();
 }

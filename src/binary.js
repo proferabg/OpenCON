@@ -33,9 +33,45 @@ export function equalBytes(a, b) {
   return true;
 }
 
-export function safeName(name) {
-  const clean = name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/[. ]+$/, "");
-  return clean || "unnamed";
+const WINDOWS_DEVICE_NAME = /^(?:CON|PRN|AUX|NUL|CLOCK\$|COM[1-9]|LPT[1-9])(?:\.|$)/i;
+const MAX_OUTPUT_NAME_LENGTH = 240;
+
+function truncateName(name, limit = MAX_OUTPUT_NAME_LENGTH) {
+  const characters = Array.from(name);
+  if (characters.length <= limit) return name;
+
+  // Keep a short extension where possible so extracted files remain recognizable.
+  const dot = name.lastIndexOf(".");
+  const extension = dot > 0 && name.length - dot <= 32 ? name.slice(dot) : "";
+  const extensionLength = Array.from(extension).length;
+  return `${characters.slice(0, Math.max(1, limit - extensionLength)).join("")}${extension}`;
+}
+
+export function safeName(name, fallback = "unnamed") {
+  let clean = String(name ?? "").normalize("NFC")
+    .replace(/[<>:"/\\|?*\x00-\x1F\x7F]/g, "_")
+    .replace(/[. ]+$/, "");
+  if (!clean || clean === "." || clean === "..") clean = fallback;
+  if (WINDOWS_DEVICE_NAME.test(clean)) clean = `_${clean}`;
+  clean = truncateName(clean);
+  return clean || fallback;
+}
+
+export function uniqueSafeName(name, usedNames, fallback = "unnamed") {
+  const base = safeName(name, fallback);
+  let candidate = base;
+  let number = 2;
+  while (usedNames.has(candidate.toLocaleLowerCase("en-US"))) {
+    const dot = base.lastIndexOf(".");
+    const hasExtension = dot > 0 && base.length - dot <= 32;
+    const stem = hasExtension ? base.slice(0, dot) : base;
+    const extension = hasExtension ? base.slice(dot) : "";
+    const suffix = ` (${number++})`;
+    const stemLimit = MAX_OUTPUT_NAME_LENGTH - Array.from(suffix + extension).length;
+    candidate = `${Array.from(stem).slice(0, Math.max(1, stemLimit)).join("")}${suffix}${extension}`;
+  }
+  usedNames.add(candidate.toLocaleLowerCase("en-US"));
+  return candidate;
 }
 
 export function formatBytes(value) {

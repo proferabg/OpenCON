@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#10151d">
   <title>OpenCON</title>
   <script type="module">
-    const version = "2026.10.01.16";
+    const version = "2026.10.25.6";
     globalThis.OPENCON_BUILD = Object.freeze({ version });
 
     const stylesheet = document.createElement("link");
@@ -73,6 +73,7 @@
             <p id="packageSubtitle"></p>
           </div>
           <div class="actions">
+            <button id="containerGalleryButton" hidden disabled>Show Theme</button>
             <button id="verifyButton" disabled>Verify selected</button>
             <button id="extractButton" class="primary" disabled>Extract selected</button>
             <button id="extractAllButton">Extract all</button>
@@ -107,8 +108,16 @@
     <div id="previewBody" class="preview-body"></div>
   </dialog>
 
+  <dialog id="galleryDialog" class="gallery-dialog">
+    <div class="dialog-head">
+      <h3 id="galleryTitle">Package Images</h3>
+      <form method="dialog"><button aria-label="Close image gallery">Close</button></form>
+    </div>
+    <div id="galleryBody" class="gallery-body"></div>
+  </dialog>
+
   <dialog id="errorDialog">
-    <h3>OpenCON could not open this package</h3>
+    <h3 id="errorTitle">OpenCON could not open this package</h3>
     <pre id="errorText"></pre>
     <form method="dialog"><button class="primary">Close</button></form>
   </dialog>

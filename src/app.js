@@ -13,7 +13,7 @@ const { formatBytes, hex, safeName, uniqueSafeName } = binary;
 const { readPackageHeader, versionText } = headerModule;
 const { BlobSource, collectStream } = sourceModule;
 const { StfsPackage } = stfsModule;
-const { fragmentsFromMonolith, SvodIsoSource } = svodModule;
+const { MONOLITH_HEADER_SIZE, fragmentsFromMonolith, splitMonolith, SvodIsoSource } = svodModule;
 const { XdvdfsVolume } = xdvdfsModule;
 const { MAX_XEX_HEADER_SIZE, formatXexTimestamp, formatXexVersion, parseXex } = xexModule;
 const { XzpArchive } = xzpModule;
@@ -31,7 +31,7 @@ const IMAGE_TYPES = new Map([
 ]);
 
 const $ = (id) => document.getElementById(id);
-const state = { package: null, header: null, rows: [], selected: null, collapsed: new Set() };
+const state = { package: null, header: null, rows: [], selected: null, collapsed: new Set(), monolithicPirs: null };
 let openGeneration = 0;
 let selectionGeneration = 0;
 let galleryGeneration = 0;
@@ -45,6 +45,7 @@ $("folderInput").addEventListener("change", (event) => { openFiles([...event.tar
 $("filter").addEventListener("input", renderRows);
 $("extractButton").addEventListener("click", extractSelected);
 $("extractAllButton").addEventListener("click", extractAll);
+$("extractSvodButton").addEventListener("click", extractAsSvod);
 $("verifyButton").addEventListener("click", verifySelected);
 $("containerGalleryButton").addEventListener("click", showContainerGallery);
 $("previewDialog").addEventListener("click", (event) => {
@@ -101,6 +102,7 @@ async function openFiles(files) {
   const generation = ++openGeneration;
   closeContainerGallery();
   configureContainerGallery(null);
+  configureSvodExport(null);
   setStatus("Inspecting package…");
   try {
     const headerFile = await findHeaderFile(files);
@@ -112,6 +114,7 @@ async function openFiles(files) {
       if (generation !== openGeneration) return;
       state.package = archive;
       state.header = null;
+      state.monolithicPirs = null;
       state.family = `XZP v${archive.version} resource archive`;
       state.selected = null;
       selectionGeneration++;
@@ -120,6 +123,7 @@ async function openFiles(files) {
       state.rows = flatten(archive.root);
       renderXzpPackage(archive, xzpFile);
       configureContainerGallery(null);
+      configureSvodExport(null);
       renderRows();
       $("dropZone").classList.add("hidden");
       $("workspace").classList.remove("hidden");
@@ -131,12 +135,16 @@ async function openFiles(files) {
     const header = await readPackageHeader(source);
     let packageReader;
     let family;
+    let monolithicPirs = null;
     if (!header.installed) {
       packageReader = await StfsPackage.open(source, header);
       family = "STFS file-table package";
     } else {
       let fragments = findDataFragments(files).map(file => new BlobSource(file, file.name));
-      if (!fragments.length && source.size > 0xB000) fragments = fragmentsFromMonolith(source);
+      if (!fragments.length && source.size > MONOLITH_HEADER_SIZE) {
+        fragments = fragmentsFromMonolith(source);
+        if (header.magic === "PIRS") monolithicPirs = { source, fileName: headerFile.name };
+      }
       if (!fragments.length) throw new Error("This is an installed-game/SVOD header. Select it together with Data0000 (or select the entire .data folder).");
       const virtualDisc = await SvodIsoSource.open(fragments);
       packageReader = await XdvdfsVolume.open(virtualDisc, header);
@@ -145,6 +153,7 @@ async function openFiles(files) {
     if (generation !== openGeneration) return;
     state.package = packageReader;
     state.header = header;
+    state.monolithicPirs = monolithicPirs;
     state.family = family;
     state.selected = null;
     selectionGeneration++;
@@ -153,6 +162,7 @@ async function openFiles(files) {
     state.rows = flatten(packageReader.root);
     renderPackage(header, headerFile, family);
     configureContainerGallery(header);
+    configureSvodExport(monolithicPirs);
     renderRows();
     $("dropZone").classList.add("hidden");
     $("workspace").classList.remove("hidden");
@@ -242,6 +252,65 @@ function configureContainerGallery(header) {
   } else {
     button.hidden = true;
     button.disabled = true;
+  }
+}
+
+function configureSvodExport(monolithicPirs) {
+  const button = $("extractSvodButton");
+  button.hidden = !monolithicPirs;
+  button.disabled = !monolithicPirs;
+}
+
+async function extractAsSvod() {
+  const monolith = state.monolithicPirs;
+  if (!monolith) return;
+  if (!window.showDirectoryPicker) {
+    showError(new Error("Extract as SVOD needs the streaming directory API. Open this page in current Chrome or Edge."), "OpenCON could not export SVOD");
+    return;
+  }
+
+  const button = $("extractSvodButton");
+  button.disabled = true;
+  try {
+    const destination = await window.showDirectoryPicker({ mode: "readwrite" });
+    const parts = splitMonolith(monolith.source);
+    const requestedHeaderName = safeName(monolith.fileName, "SVOD");
+    const headerHandle = await createOutputHandle(destination, requestedHeaderName, false, "SVOD package header");
+    const outputHeaderName = headerHandle.name || requestedHeaderName;
+    const dataDirectoryName = safeName(`${outputHeaderName}.data`, "SVOD.data");
+    const dataDirectory = await createOutputHandle(destination, dataDirectoryName, true, "SVOD data directory");
+    let written = 0;
+    const updateProgress = count => {
+      written += count;
+      setStatus(`Extracting as SVOD · ${Math.floor(written * 100 / monolith.source.size)}%`);
+    };
+
+    await writeSourceToHandle(parts.header, headerHandle, updateProgress);
+    for (let index = 0; index < parts.fragments.length; index++) {
+      const fragment = parts.fragments[index];
+      const fragmentHandle = await createOutputHandle(dataDirectory, fragment.name, false, fragment.name);
+      await writeSourceToHandle(fragment, fragmentHandle, updateProgress);
+    }
+    setStatus(`Extracted ${outputHeaderName} with ${parts.fragments.length} SVOD data fragment${parts.fragments.length === 1 ? "" : "s"}`);
+  } catch (error) {
+    if (error.name !== "AbortError") showError(error, "OpenCON could not export SVOD");
+    setStatus(error.name === "AbortError" ? "SVOD export cancelled" : "SVOD export failed");
+  } finally {
+    if (state.monolithicPirs === monolith) button.disabled = false;
+  }
+}
+
+async function writeSourceToHandle(source, fileHandle, onChunk) {
+  const writable = await fileHandle.createWritable();
+  try {
+    for await (const chunk of source.stream(0, source.size, 4 * 1024 * 1024)) {
+      await writable.write(chunk);
+      onChunk(chunk.length);
+    }
+    await writable.close();
+  } catch (error) {
+    await writable.abort(error);
+    throw error;
   }
 }
 

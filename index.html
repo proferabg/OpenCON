@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#10151d">
   <title>OpenCON</title>
   <script type="module">
-    const version = "2026.10.25.6";
+    const version = "2026.10.25.7";
     globalThis.OPENCON_BUILD = Object.freeze({ version });
 
     const stylesheet = document.createElement("link");
@@ -77,6 +77,7 @@
             <button id="verifyButton" disabled>Verify selected</button>
             <button id="extractButton" class="primary" disabled>Extract selected</button>
             <button id="extractAllButton">Extract all</button>
+            <button id="extractSvodButton" hidden disabled>Extract as SVOD</button>
           </div>
         </div>
         <div class="filter-row">

@@ -1,14 +1,15 @@
 const moduleVersion = encodeURIComponent(globalThis.OPENCON_BUILD?.version || "development");
 const { SliceSource } = await import(`./source.js?v=${moduleVersion}`);
 
-const FRAGMENT_SIZE = 0x0A290000;
+export const MONOLITH_HEADER_SIZE = 0xB000;
+export const FRAGMENT_SIZE = 0x0A290000;
 const FRAGMENT_PREFIX = 0x2000;
 const DATA_RUN = 0xCC000;
 const PHYSICAL_RUN = 0xCD000;
 
 export function fragmentsFromMonolith(source) {
   const fragments = [];
-  let offset = 0xB000;
+  let offset = MONOLITH_HEADER_SIZE;
   let index = 0;
   while (offset < source.size) {
     const size = Math.min(FRAGMENT_SIZE, source.size - offset);
@@ -17,6 +18,14 @@ export function fragmentsFromMonolith(source) {
     index++;
   }
   return fragments;
+}
+
+export function splitMonolith(source) {
+  if (source.size <= MONOLITH_HEADER_SIZE) throw new Error("The PIRS file does not contain monolithic SVOD data.");
+  return {
+    header: new SliceSource(source, 0, MONOLITH_HEADER_SIZE, source.name),
+    fragments: fragmentsFromMonolith(source)
+  };
 }
 
 export class SvodIsoSource {

@@ -3,11 +3,22 @@ const { textAscii, u32le } = await import(`./binary.js?v=${moduleVersion}`);
 
 const SECTOR = 0x800;
 const MAGIC = "MICROSOFT*XBOX*MEDIA";
+const DESCRIPTOR_OFFSET = 0x20 * SECTOR;
+
+export const DISC_LAYOUTS = Object.freeze([
+  Object.freeze({ name: "XISO", partitionOffset: 0x00000000 }),
+  Object.freeze({ name: "XGD2", partitionOffset: 0x0FD90000 }),
+  Object.freeze({ name: "XGD1", partitionOffset: 0x18300000 }),
+  Object.freeze({ name: "XGD3", partitionOffset: 0x02080000 })
+]);
 
 export class XdvdfsVolume {
-  constructor(source, packageHeader) {
+  constructor(source, packageHeader, format = "SVOD", partitionOffset = 0) {
     this.source = source;
     this.packageHeader = packageHeader;
+    this.format = format;
+    this.partitionOffset = partitionOffset;
+    this.name = source.name;
     this.root = { name: "Root", path: "", directory: true, children: [] };
     this.entries = [];
   }
@@ -18,15 +29,30 @@ export class XdvdfsVolume {
     return volume;
   }
 
+  static async openDiscImage(source) {
+    const layout = await detectDiscLayout(source);
+    const volume = new XdvdfsVolume(source, null, layout.name, layout.partitionOffset);
+    await volume.initialize();
+    return volume;
+  }
+
   async initialize() {
-    const descriptor = await this.source.read(0x10000, 0x30);
-    if (textAscii(descriptor, 0, 20) !== MAGIC) throw new Error("The SVOD payload does not contain a valid XDVDFS volume descriptor.");
+    const descriptor = await this.source.read(this.partitionOffset + DESCRIPTOR_OFFSET, 0x30);
+    if (textAscii(descriptor, 0, 20) !== MAGIC) throw new Error("The payload does not contain a valid XDVDFS volume descriptor.");
     this.sectorDelta = 0;
-    const h = this.packageHeader.bytes;
-    if (h.length > 921 && (h[913] & 0x40) === 0x40) this.sectorDelta = u32le(h, 917) * 2 - 34;
+    const h = this.packageHeader?.bytes;
+    if (h?.length > 921 && (h[913] & 0x40) === 0x40) this.sectorDelta = u32le(h, 917) * 2 - 34;
     const rootSector = correctedSector(u32le(descriptor, 20), this.sectorDelta);
     const rootSize = u32le(descriptor, 24);
+    this.assertExtent(rootSector * SECTOR, rootSize, "root directory");
     this.root.children = await this.readDirectory(rootSector, rootSize, "", new Set());
+  }
+
+  assertExtent(offset, size, description) {
+    const absoluteOffset = this.partitionOffset + offset;
+    if (!Number.isSafeInteger(absoluteOffset) || !Number.isSafeInteger(size) || offset < 0 || size < 0 || absoluteOffset + size > this.source.size) {
+      throw new Error(`The XDVDFS ${description} is outside the image (${offset}+${size}).`);
+    }
   }
 
   async readDirectory(sector, size, parentPath, directoryStack) {
@@ -35,7 +61,9 @@ export class XdvdfsVolume {
     const key = `${sector}:${size}`;
     if (directoryStack.has(key)) throw new Error("The XDVDFS directory tree contains a loop.");
     const nextStack = new Set(directoryStack).add(key);
-    const table = await this.source.read(sector * SECTOR, size);
+    const tableOffset = sector * SECTOR;
+    this.assertExtent(tableOffset, size, `directory ${parentPath || "Root"}`);
+    const table = await this.source.read(this.partitionOffset + tableOffset, size);
     const records = [];
     // Entries are physically sequential. The first two words form the on-disc
     // search tree, but walking those links alone misses sector padding and is
@@ -67,13 +95,25 @@ export class XdvdfsVolume {
       const node = { ...record, path, directory, children: [] };
       if (directory) node.children = await this.readDirectory(record.sector, record.size, path, nextStack);
       else {
-        node.stream = (chunkSize) => this.source.stream(record.sector * SECTOR, record.size, chunkSize);
+        const fileOffset = record.sector * SECTOR;
+        this.assertExtent(fileOffset, record.size, `file ${path}`);
+        node.stream = (chunkSize) => this.source.stream(this.partitionOffset + fileOffset, record.size, chunkSize);
         this.entries.push(node);
       }
       nodes.push(node);
     }
     return nodes;
   }
+}
+
+export async function detectDiscLayout(source) {
+  for (const layout of DISC_LAYOUTS) {
+    const descriptorOffset = layout.partitionOffset + DESCRIPTOR_OFFSET;
+    if (descriptorOffset + MAGIC.length > source.size) continue;
+    const candidate = await source.read(descriptorOffset, MAGIC.length);
+    if (textAscii(candidate, 0, MAGIC.length) === MAGIC) return layout;
+  }
+  throw new Error("No XISO, XGD1, XGD2, or XGD3 XDVDFS volume descriptor was found.");
 }
 
 function correctedSector(sector, delta) {

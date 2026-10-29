@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#10151d">
   <title>OpenCON</title>
   <script type="module">
-    const version = "2026.10.25.7";
+    const version = "2026.10.28.1";
     globalThis.OPENCON_BUILD = Object.freeze({ version });
 
     const stylesheet = document.createElement("link");
@@ -41,10 +41,10 @@
   <header class="topbar">
     <a class="brand" href="./" aria-label="OpenCON home">
       <img id="brandIcon" class="brand-mark" alt="" width="38" height="38">
-      <span><strong>OpenCON</strong><small>Xbox 360 package explorer</small></span>
+      <span><strong>OpenCON</strong><small>Xbox package and disc explorer</small></span>
     </a>
     <div class="toolbar">
-      <button id="openFiles" class="primary">Open package</button>
+      <button id="openFiles" class="primary">Open file</button>
       <button id="openFolder">Open GoD folder</button>
       <input id="fileInput" type="file" multiple hidden>
       <input id="folderInput" type="file" webkitdirectory multiple hidden>
@@ -54,10 +54,10 @@
   <main>
     <section id="dropZone" class="welcome">
       <div class="drop-icon">↓</div>
-      <h1>Open Xbox 360 packages locally</h1>
-      <p>Drop a CON, LIVE, PIRS, XZP, monolithic Xbox App package, or a split GoD folder here.</p>
+      <h1>Open Xbox packages and disc images locally</h1>
+      <p>Drop a CON, LIVE, PIRS, XZP, ISO, XISO, monolithic Xbox App package, or a split GoD folder here.</p>
       <p class="privacy">Nothing is uploaded. Large files are read in small slices.</p>
-      <div class="format-chips"><span>CON</span><span>LIVE</span><span>PIRS</span><span>XZP v1 / v3</span><span>GoD / SVOD</span><span>Xbox App / XUP</span></div>
+      <div class="format-chips"><span>CON</span><span>LIVE</span><span>PIRS</span><span>XZP v1 / v3</span><span>GoD / SVOD</span><span>ISO / XISO</span><span>Xbox App / XUP</span></div>
     </section>
 
     <section id="workspace" class="workspace hidden">

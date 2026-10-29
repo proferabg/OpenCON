@@ -108,27 +108,53 @@ async function openFiles(files) {
     const headerFile = await findHeaderFile(files);
     if (!headerFile) {
       const xzpFile = await findXzpFile(files);
-      if (!xzpFile) throw new Error("No CON, LIVE, PIRS, or XZP package header was found. For split GoD content, select the header and its .data folder together.");
-      const source = new BlobSource(xzpFile, xzpFile.name);
-      const archive = await XzpArchive.open(source, xzpFile.name);
+      if (xzpFile) {
+        const source = new BlobSource(xzpFile, xzpFile.name);
+        const archive = await XzpArchive.open(source, xzpFile.name);
+        if (generation !== openGeneration) return;
+        state.package = archive;
+        state.header = null;
+        state.monolithicPirs = null;
+        state.family = `XZP v${archive.version} resource archive`;
+        state.selected = null;
+        selectionGeneration++;
+        closePreview();
+        state.collapsed.clear();
+        state.rows = flatten(archive.root);
+        renderXzpPackage(archive, xzpFile);
+        configureContainerGallery(null);
+        configureSvodExport(null);
+        renderRows();
+        $("dropZone").classList.add("hidden");
+        $("workspace").classList.remove("hidden");
+        $("extractAllButton").disabled = !state.rows.some(row => !row.node.directory);
+        setStatus(`Opened ${xzpFile.name}`);
+        return;
+      }
+
+      const imageFile = findDiscImageFile(files);
+      if (!imageFile) throw new Error("No CON, LIVE, PIRS, XZP, XISO, or XGD image was found. For split GoD content, select the header and its .data folder together.");
+      const source = new BlobSource(imageFile, imageFile.name);
+      const volume = await XdvdfsVolume.openDiscImage(source);
       if (generation !== openGeneration) return;
-      state.package = archive;
+      volume.name = imageFile.name.replace(/\.(?:x?iso|img)$/i, "") || imageFile.name;
+      state.package = volume;
       state.header = null;
       state.monolithicPirs = null;
-      state.family = `XZP v${archive.version} resource archive`;
+      state.family = `${volume.format} XDVDFS disc image`;
       state.selected = null;
       selectionGeneration++;
       closePreview();
       state.collapsed.clear();
-      state.rows = flatten(archive.root);
-      renderXzpPackage(archive, xzpFile);
+      state.rows = flatten(volume.root);
+      renderDiscImage(volume, imageFile);
       configureContainerGallery(null);
       configureSvodExport(null);
       renderRows();
       $("dropZone").classList.add("hidden");
       $("workspace").classList.remove("hidden");
       $("extractAllButton").disabled = !state.rows.some(row => !row.node.directory);
-      setStatus(`Opened ${xzpFile.name}`);
+      setStatus(`Opened ${imageFile.name} as ${volume.format}`);
       return;
     }
     const source = new BlobSource(headerFile, headerFile.name);
@@ -177,6 +203,10 @@ async function openFiles(files) {
 
 async function findXzpFile(files) {
   return files.find(file => file.name.toLowerCase().endsWith(".xzp")) || null;
+}
+
+function findDiscImageFile(files) {
+  return files.find(file => /\.(?:x?iso|img)$/i.test(file.name)) || (files.length === 1 ? files[0] : null);
 }
 
 async function findHeaderFile(files) {
@@ -236,6 +266,21 @@ function renderXzpPackage(archive, file) {
     ["Data offset", `0x${archive.dataOffset.toString(16).toUpperCase()}`]
   ]);
   const mark = document.createElement("span"); mark.textContent = "XZP";
+  $("artwork").replaceChildren(mark);
+}
+
+function renderDiscImage(volume, file) {
+  $("packageTitle").textContent = file.name;
+  $("packageSubtitle").textContent = `${volume.format} XDVDFS disc image · ${formatBytes(file.size)}`;
+  renderMetadata([
+    ["Format", volume.format],
+    ["Filesystem", "XDVDFS"],
+    ["Partition offset", `0x${volume.partitionOffset.toString(16).toUpperCase().padStart(8, "0")}`],
+    ["Files", volume.entries.length.toLocaleString()],
+    ["Image size", formatBytes(file.size)]
+  ]);
+  const mark = document.createElement("span");
+  mark.textContent = volume.format;
   $("artwork").replaceChildren(mark);
 }
 

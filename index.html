@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#10151d">
   <title>OpenCON</title>
   <script type="module">
-    const version = "2026.10.28.1";
+    const version = "2026.10.31.1";
     globalThis.OPENCON_BUILD = Object.freeze({ version });
 
     const stylesheet = document.createElement("link");
@@ -55,9 +55,9 @@
     <section id="dropZone" class="welcome">
       <div class="drop-icon">↓</div>
       <h1>Open Xbox packages and disc images locally</h1>
-      <p>Drop a CON, LIVE, PIRS, XZP, ISO, XISO, monolithic Xbox App package, or a split GoD folder here.</p>
+      <p>Drop a CON, LIVE, PIRS, XZP, XISO, XGD1/XGD2/XGD3 image, monolithic Xbox App package, or a split GoD folder here.</p>
       <p class="privacy">Nothing is uploaded. Large files are read in small slices.</p>
-      <div class="format-chips"><span>CON</span><span>LIVE</span><span>PIRS</span><span>XZP v1 / v3</span><span>GoD / SVOD</span><span>ISO / XISO</span><span>Xbox App / XUP</span></div>
+      <div class="format-chips"><span>CON</span><span>LIVE</span><span>PIRS</span><span>XZP v1 / v3</span><span>GoD / SVOD</span><span>XISO</span><span>XGD1 / XGD2 / XGD3</span><span>Xbox App / XUP</span></div>
     </section>
 
     <section id="workspace" class="workspace hidden">
@@ -121,6 +121,33 @@
     <h3 id="errorTitle">OpenCON could not open this package</h3>
     <pre id="errorText"></pre>
     <form method="dialog"><button class="primary">Close</button></form>
+  </dialog>
+
+  <dialog id="extractionDialog" class="extraction-dialog" aria-labelledby="operationTitle">
+    <div class="operation-progress" role="status" aria-live="polite">
+      <div class="operation-progress-head">
+        <strong id="operationTitle">Extraction</strong>
+        <span id="operationPercent">0%</span>
+      </div>
+      <progress id="operationBar" max="1" value="0"></progress>
+      <div class="operation-progress-detail">
+        <span id="operationDetail">Preparing…</span>
+        <span id="operationBytes">0 B</span>
+      </div>
+    </div>
+    <div class="extraction-dialog-actions">
+      <button id="cancelExtractionButton" class="danger">Cancel extraction</button>
+      <button id="closeExtractionButton" class="primary" hidden>Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="cancelExtractionDialog" aria-labelledby="cancelExtractionTitle">
+    <h3 id="cancelExtractionTitle">Cancel extraction?</h3>
+    <p>The current file will be stopped and the files already extracted will remain in the destination folder.</p>
+    <form method="dialog" class="confirmation-actions">
+      <button value="continue">Keep extracting</button>
+      <button id="confirmCancelExtractionButton" class="danger" value="cancel">Yes, cancel extraction</button>
+    </form>
   </dialog>
 
 </body>

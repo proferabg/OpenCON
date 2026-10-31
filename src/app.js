@@ -37,6 +37,7 @@ let selectionGeneration = 0;
 let galleryGeneration = 0;
 let galleryObjectUrls = [];
 let dragDepth = 0;
+let activeExtraction = null;
 
 $("openFiles").addEventListener("click", () => $("fileInput").click());
 $("openFolder").addEventListener("click", () => $("folderInput").click());
@@ -61,6 +62,10 @@ $("galleryDialog").addEventListener("click", (event) => {
   if (!inside) dialog.close();
 });
 $("galleryDialog").addEventListener("close", clearContainerGallery);
+$("extractionDialog").addEventListener("cancel", event => event.preventDefault());
+$("cancelExtractionButton").addEventListener("click", requestExtractionCancellation);
+$("confirmCancelExtractionButton").addEventListener("click", confirmExtractionCancellation);
+$("closeExtractionButton").addEventListener("click", closeExtractionProgress);
 
 document.addEventListener("dragenter", (event) => {
   if (!isFileDrag(event)) return;
@@ -98,8 +103,9 @@ function clearDragState() {
 }
 
 async function openFiles(files) {
-  if (!files.length) return;
+  if (!files.length || activeExtraction) return;
   const generation = ++openGeneration;
+  resetOperationProgress();
   closeContainerGallery();
   configureContainerGallery(null);
   configureSvodExport(null);
@@ -700,44 +706,87 @@ async function extractAll() {
     showError(new Error("Extract All needs the streaming directory API. Open this GitHub Page in current Chrome or Edge. Individual small files can still be downloaded in other browsers."));
     return;
   }
+  let progressStarted = false;
+  setExtractionButtonsBusy(true);
   try {
     const destination = await window.showDirectoryPicker({ mode: "readwrite" });
     const rootName = safeName(state.header?.displayTitle || state.header?.packageTitle || state.package?.name || "OpenCON extraction");
     const rootHandle = await createOutputHandle(destination, rootName, true, "package root");
     let completed = 0;
+    let written = 0;
+    let currentPath = "Preparing output folders…";
+    let lastPaint = 0;
     const renamedFiles = [];
-    const total = state.rows.filter(row => !row.node.directory).length;
-    await writeChildren(state.package.root.children, rootHandle, () => {
+    const files = state.rows.map(row => row.node).filter(node => !node.directory);
+    const total = files.length;
+    const totalBytes = files.reduce((sum, node) => sum + node.size, 0);
+    const extraction = { cancelRequested: false };
+    activeExtraction = extraction;
+    beginOperationProgress("Extracting full image", totalBytes, total);
+    progressStarted = true;
+    const paintProgress = (force = false) => {
+      const now = performance.now();
+      if (!force && now - lastPaint < 100) return;
+      lastPaint = now;
+      updateOperationProgress(written, totalBytes, completed, total, currentPath);
+    };
+    await writeChildren(state.package.root.children, rootHandle, (node, count) => {
+      currentPath = node.path;
+      written += count;
+      paintProgress(false);
+    }, node => {
       completed++;
-      setStatus(`Extracting all · ${completed}/${total} files`);
+      currentPath = node.path;
+      paintProgress(true);
     }, (packagePath, originalName, outputName) => {
       renamedFiles.push({ packagePath, originalName, outputName });
-    });
-    setStatus(`Extracted ${completed} files${renamedFiles.length ? ` · adjusted ${renamedFiles.length} output name${renamedFiles.length === 1 ? "" : "s"}` : ""}`);
+    }, () => extraction.cancelRequested);
+    const completion = `Extracted ${completed} files${renamedFiles.length ? ` · adjusted ${renamedFiles.length} output name${renamedFiles.length === 1 ? "" : "s"}` : ""}`;
+    finishOperationProgress(written, totalBytes, completed, total, completion);
+    setStatus(completion);
     if (renamedFiles.length) showRenamedFilesNotice(renamedFiles);
   } catch (error) {
     if (error.name !== "AbortError") showError(error, "OpenCON could not extract this package");
-    setStatus(error.name === "AbortError" ? "Extraction cancelled" : "Extraction failed");
+    const message = error.name === "AbortError" ? "Extraction cancelled" : "Extraction failed";
+    if (progressStarted) failOperationProgress(message, error, error.name === "AbortError");
+    setStatus(message);
+  } finally {
+    activeExtraction = null;
+    setExtractionButtonsBusy(false);
   }
 }
 
-async function writeChildren(nodes, directoryHandle, onFile, onRename) {
+async function writeChildren(nodes, directoryHandle, onChunk, onFile, onRename, shouldCancel) {
   const usedNames = new Set();
   for (const node of nodes) {
+    throwIfExtractionCancelled(shouldCancel);
     const outputName = uniqueSafeName(node.name, usedNames, node.directory ? "folder" : "file");
     if (node.directory) {
       const childHandle = await createOutputHandle(directoryHandle, outputName, true, node.path, onRename);
-      await writeChildren(node.children, childHandle, onFile, onRename);
+      await writeChildren(node.children, childHandle, onChunk, onFile, onRename, shouldCancel);
     } else {
       const fileHandle = await createOutputHandle(directoryHandle, outputName, false, node.path, onRename);
       const writable = await fileHandle.createWritable();
       try {
-        for await (const chunk of node.stream()) await writable.write(chunk);
+        onChunk(node, 0);
+        for await (const chunk of node.stream()) {
+          throwIfExtractionCancelled(shouldCancel);
+          await writable.write(chunk);
+          onChunk(node, chunk.length);
+        }
+        throwIfExtractionCancelled(shouldCancel);
         await writable.close();
-      } catch (error) { await writable.abort(error); throw error; }
-      onFile();
+      } catch (error) {
+        try { await writable.abort(error); } catch {}
+        throw error;
+      }
+      onFile(node);
     }
   }
+}
+
+function throwIfExtractionCancelled(shouldCancel) {
+  if (shouldCancel?.()) throw new DOMException("Extraction cancelled by user.", "AbortError");
 }
 
 async function createOutputHandle(parentHandle, requestedName, directory, packagePath, onRename = () => {}) {
@@ -802,6 +851,87 @@ async function verifySelected() {
 }
 
 function setStatus(message) { $("status").textContent = message; }
+
+function setExtractionButtonsBusy(busy) {
+  $("extractAllButton").disabled = busy || !state.rows.some(row => !row.node.directory);
+  $("extractButton").disabled = busy || !state.selected || state.selected.directory;
+}
+
+function beginOperationProgress(title, totalBytes, totalFiles) {
+  const dialog = $("extractionDialog");
+  const panel = dialog.querySelector(".operation-progress");
+  panel.classList.remove("complete", "error");
+  $("cancelExtractionButton").hidden = false;
+  $("cancelExtractionButton").disabled = false;
+  $("cancelExtractionButton").textContent = "Cancel extraction";
+  $("closeExtractionButton").hidden = true;
+  $("operationTitle").textContent = title;
+  $("operationBar").max = Math.max(1, totalBytes);
+  $("operationBar").value = 0;
+  $("operationPercent").textContent = "0%";
+  $("operationDetail").textContent = `0/${totalFiles.toLocaleString()} files · Preparing…`;
+  $("operationBytes").textContent = `0 B / ${formatBytes(totalBytes)}`;
+  if (!dialog.open) dialog.showModal();
+}
+
+function updateOperationProgress(written, totalBytes, completed, totalFiles, currentPath) {
+  const bounded = Math.min(written, totalBytes);
+  const percent = totalBytes ? bounded * 100 / totalBytes : (completed === totalFiles ? 100 : 0);
+  $("operationBar").value = totalBytes ? bounded : percent / 100;
+  $("operationPercent").textContent = `${percent.toFixed(percent < 10 ? 1 : 0)}%`;
+  $("operationDetail").textContent = `${completed.toLocaleString()}/${totalFiles.toLocaleString()} files · ${currentPath}`;
+  $("operationBytes").textContent = `${formatBytes(written)} / ${formatBytes(totalBytes)}`;
+  setStatus(`Extracting all · ${percent.toFixed(1)}% · ${completed}/${totalFiles} files · ${currentPath}`);
+}
+
+function finishOperationProgress(written, totalBytes, completed, totalFiles, detail) {
+  const panel = $("extractionDialog").querySelector(".operation-progress");
+  panel.classList.add("complete");
+  $("operationTitle").textContent = "Extraction complete";
+  $("operationBar").value = $("operationBar").max;
+  $("operationPercent").textContent = "100%";
+  $("operationDetail").textContent = detail || `${completed.toLocaleString()}/${totalFiles.toLocaleString()} files`;
+  $("operationBytes").textContent = `${formatBytes(written)} / ${formatBytes(totalBytes)}`;
+  $("cancelExtractionButton").hidden = true;
+  $("closeExtractionButton").hidden = false;
+}
+
+function failOperationProgress(message, error, cancelled = false) {
+  const panel = $("extractionDialog").querySelector(".operation-progress");
+  panel.classList.add(cancelled ? "complete" : "error");
+  $("operationTitle").textContent = message;
+  $("operationPercent").textContent = cancelled ? "Cancelled" : "Stopped";
+  $("operationDetail").textContent = error?.message || String(error);
+  $("cancelExtractionButton").hidden = true;
+  $("closeExtractionButton").hidden = false;
+}
+
+function resetOperationProgress() {
+  const dialog = $("extractionDialog");
+  if (dialog.open && !activeExtraction) dialog.close();
+  dialog.querySelector(".operation-progress").classList.remove("complete", "error");
+}
+
+function requestExtractionCancellation() {
+  if (!activeExtraction || activeExtraction.cancelRequested) return;
+  const confirmation = $("cancelExtractionDialog");
+  if (!confirmation.open) confirmation.showModal();
+}
+
+function confirmExtractionCancellation() {
+  if (!activeExtraction) return;
+  activeExtraction.cancelRequested = true;
+  $("cancelExtractionButton").disabled = true;
+  $("cancelExtractionButton").textContent = "Cancelling…";
+  setStatus("Cancelling extraction after the current write…");
+}
+
+function closeExtractionProgress() {
+  if (activeExtraction) return;
+  const dialog = $("extractionDialog");
+  if (dialog.open) dialog.close();
+}
+
 function showError(error, title = "OpenCON could not open this package") {
   showMessage(title, error?.stack || String(error));
 }
